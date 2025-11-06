@@ -6,47 +6,15 @@ on:
   pull_request:
     branches: [ master, dev ]
 jobs:
-  security-audit:
-    name: NPM Security Audit
+  audit:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
       with:
         node-version: '18'
         cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Audit dependencies
-      id: audit
-      continue-on-error: true
-      run: |
-        npm audit --json > audit.json || true
         
-        if [ -f audit.json ]; then
-          VULNERABILITIES=$(node -e "console.log(require('./audit.json').metadata.vulnerabilities.total)")
-          echo "vulnerabilities=$VULNERABILITIES" >> $GITHUB_OUTPUT
-        else
-          echo "vulnerabilities=0" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Check audit results
-      if: steps.audit.outputs.vulnerabilities != '0'
-      run: |
-        echo "Found ${{ steps.audit.outputs.vulnerabilities }} vulnerabilities"
-        echo "Please run 'npm audit' locally to see details"
-        exit 1
-
-    - name: Upload audit report
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: npm-audit-report
-        path: audit.json
-        retention-days: 7
+    - run: npm ci
+    - run: npm audit
