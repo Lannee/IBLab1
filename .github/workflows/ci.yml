@@ -2,36 +2,86 @@ name: CI
 
 on:
   push:
-    branches: ["master", "dev"]
+    branches: [ dev, master ]
   pull_request:
-    branches: ["master"]
+    branches: [ master ]
 
 jobs:
-  build:
+  security-scan:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Snyk CLI
-        run: npm install -g snyk
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Run Snyk test
-        run: snyk test --sarif-file-output=snyk.sarif --json-file-output=snyk.json
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Upload Snyk SARIF report
+      - name: Run NPM audit (SAST)
+        run: |
+          npm audit --json > audit-report.json || true
+
+      - name: Upload NPM audit report
         uses: actions/upload-artifact@v4
         with:
-          name: snyk-sarif-report
-          path: snyk.sarif
-          if-no-files-found: warn
+          name: npm-audit-report
+          path: audit-report.json
 
-      - name: Upload Snyk JSON report
+      - name: OWASP Dependency-Check (SCA)
+        uses: dependency-check/Dependency-Check_Action@main
+        id: depcheck
+        with:
+          project: 'lab1-security-scan'
+          path: '.'
+          format: 'ALL'
+          args: >
+            --enableRetired
+            --enableExperimental
+            --out reports
+
+      - name: Upload OWASP reports
         uses: actions/upload-artifact@v4
         with:
-          name: snyk-json-report
-          path: snyk.json
-          if-no-files-found: warn
+          name: owasp-reports
+          path: reports/
+
+      - name: Show short NPM audit summary
+        run: |
+          if [ -f audit-report.json ]; then
+            jq '.metadata.vulnerabilities' audit-report.json || true
+          else
+            echo "No NPM audit report"
+          fi
+
+      - name: Fail on critical vulnerabilities
+        run: |
+          FAIL=0
+          
+          # NPM audit
+          if [ -f audit-report.json ]; then
+            CV=$(jq '.metadata.vulnerabilities.critical // 0' audit-report.json)
+            if [ "$CV" -gt 0 ]; then
+              echo "NPM Audit: $CV critical vulnerabilities found"
+              FAIL=1
+            fi
+          fi
+
+          # OWASP Dependency-Check
+          if [ -f reports/dependency-check-report.json ]; then
+            HIGH_CRITICAL=$(jq '[.dependencies[]?.vulnerabilities[]? | select(.severity=="HIGH" or .severity=="CRITICAL")] | length' reports/dependency-check-report.json || echo "0")
+            if [ "$HIGH_CRITICAL" -gt 0 ]; then
+              echo "OWASP Dependency-Check: $HIGH_CRITICAL high/critical vulnerabilities found"
+              FAIL=1
+            fi
+          fi
+
+          if [ "$FAIL" -eq 1 ]; then
+            echo "Security scan failed due to critical vulnerabilities"
+            exit 1
+          else
+            echo "No critical vulnerabilities found"
+          fi
