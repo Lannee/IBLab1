@@ -1,4 +1,4 @@
-const sqlite3 = require('sqlite3').verbose();
+const Database = require('better-sqlite3');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 
@@ -7,14 +7,17 @@ const DB_PATH = path.join(__dirname, '../database.sqlite');
 let db = null;
 
 const initializeDatabase = () => {
-  db = new sqlite3.Database(DB_PATH, (err) => {
-    if (err) {
-      console.error('Error opening database:', err.message);
-    } else {
-      console.log('Connected to SQLite database');
-      createTables();
-    }
-  });
+  try {
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    
+    console.log('Connected to SQLite database with better-sqlite3');
+    createTables();
+  } catch (error) {
+    console.error('Error opening database:', error.message);
+    throw error;
+  }
 };
 
 const createTables = () => {
@@ -32,39 +35,47 @@ const createTables = () => {
       title TEXT NOT NULL,
       content TEXT NOT NULL,
       user_id INTEGER NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users (id)
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
     )
   `;
 
-  db.run(usersTable);
-  db.run(postsTable);
+  db.exec(usersTable);
+  db.exec(postsTable);
 };
 
 const dbQuery = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
+  try {
+    const stmt = db.prepare(sql);
+    return params.length > 0 ? stmt.all(...params) : stmt.all();
+  } catch (error) {
+    console.error('Database query error:', error);
+    throw error;
+  }
 };
 
 const dbGet = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+  try {
+    const stmt = db.prepare(sql);
+    return params.length > 0 ? stmt.get(...params) : stmt.get();
+  } catch (error) {
+    console.error('Database get error:', error);
+    throw error;
+  }
 };
 
 const dbRun = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function(err) {
-      if (err) reject(err);
-      else resolve({ id: this.lastID, changes: this.changes });
-    });
-  });
+  try {
+    const stmt = db.prepare(sql);
+    const result = params.length > 0 ? stmt.run(...params) : stmt.run();
+    
+    return {
+      lastID: result.lastInsertRowid,
+      changes: result.changes
+    };
+  } catch (error) {
+    console.error('Database run error:', error);
+    throw error;
+  }
 };
 
 module.exports = {
