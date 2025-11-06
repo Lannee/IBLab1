@@ -2,19 +2,43 @@ name: CI
 
 on:
   push:
-    branches: [ master, dev ]
+    branches: ["master", "dev"]
   pull_request:
-    branches: [ master, dev ]
+    branches: ["master"]
+
 jobs:
-  audit:
+  build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        
-    - run: npm ci
-    - run: npm audit
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Upload SpotBugs report
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotbugs-report
+          path: target/site/spotbugs.html
+          if-no-files-found: warn
+
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
+      - name: Run Snyk test
+        run: snyk test --maven --sarif-file-output=snyk.sarif --json-file-output=snyk.json
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Upload Snyk SARIF report
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-sarif-report
+          path: snyk.sarif
+          if-no-files-found: warn
+
+      - name: Upload Snyk JSON report
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-json-report
+          path: snyk.json
+          if-no-files-found: warn
