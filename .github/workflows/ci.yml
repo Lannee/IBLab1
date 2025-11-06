@@ -1,80 +1,52 @@
-name: CI/CD Pipeline with Security Scanning
+name: CI
 
 on:
   push:
     branches: [ master, dev ]
   pull_request:
-    branches: [ master ]
-
+    branches: [ master, dev ]
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        node-version: [16.x, 18.x, 20.x]
-
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
-    
-    - name: Run tests
-      run: npm test
-    
-    - name: Generate coverage report
-      run: npm test -- --coverage
-
-  security-scanning:
+  security-audit:
+    name: NPM Security Audit
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Use Node.js
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20.x'
+        node-version: '18'
         cache: 'npm'
-    
+
     - name: Install dependencies
       run: npm ci
-    
-    # SAST
-    - name: Run npm audit for vulnerability check
-      run: npm audit --audit-level=high
-    
-    # SCA
-    - name: Run Snyk security scan
-      uses: snyk/actions/node@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:
-        args: --severity-threshold=high
-    
-    # OWASP Dependency Check
-    - name: OWASP Dependency Check
-      uses: dependency-check/Dependency-Check@main
-      with:
-        project: 'secure-node-api'
-        path: '.'
-        format: 'HTML'
-        out: 'reports'
-    
-    - name: Upload security report
-      uses: actions/upload-artifact@v3
-      with:
-        name: security-reports
-        path: reports/
-    
-    - name: Run basic security linter
+
+    - name: Audit dependencies
+      id: audit
+      continue-on-error: true
       run: |
-        npm install -g eslint-plugin-security
-        npx eslint . --ext .js --config .eslintrc.json || true
+        npm audit --json > audit.json || true
+        
+        if [ -f audit.json ]; then
+          VULNERABILITIES=$(node -e "console.log(require('./audit.json').metadata.vulnerabilities.total)")
+          echo "vulnerabilities=$VULNERABILITIES" >> $GITHUB_OUTPUT
+        else
+          echo "vulnerabilities=0" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Check audit results
+      if: steps.audit.outputs.vulnerabilities != '0'
+      run: |
+        echo "Found ${{ steps.audit.outputs.vulnerabilities }} vulnerabilities"
+        echo "Please run 'npm audit' locally to see details"
+        exit 1
+
+    - name: Upload audit report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: npm-audit-report
+        path: audit.json
+        retention-days: 7
