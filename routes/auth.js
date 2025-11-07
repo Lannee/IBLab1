@@ -47,7 +47,6 @@ router.post('/login', validateAuth, handleValidationErrors, async (req, res) => 
       });
     }
 
-    // Проверка пароля
     const isPasswordValid = await bcrypt.compare(password, user.password);
     
     if (!isPasswordValid) {
@@ -111,17 +110,9 @@ router.post('/register', validateAuth, handleValidationErrors, async (req, res) 
       [username, hashedPassword]
     );
 
-    const newUser = await dbGet(
-      'SELECT id, username FROM users WHERE id = ?',
-      [result.id]
-    );
-
     res.status(201).json({
       status: 'success',
-      message: 'User registered successfully',
-      data: {
-        user: newUser
-      }
+      message: 'User registered successfully'
     });
 
   } catch (error) {

@@ -52,8 +52,8 @@ router.post('/posts', validatePost, handleValidationErrors, async (req, res) => 
     );
 
     const newPost = await dbGet(
-      'SELECT p.*, u.username FROM posts p JOIN users u ON p.user_id = u.id WHERE p.id = ?',
-      [result.id]
+      'SELECT p.id, p.title, p.content, u.username FROM posts p JOIN users u ON p.user_id = u.id WHERE p.id = ?',
+      [result.lastID]
     );
 
     res.status(201).json({
